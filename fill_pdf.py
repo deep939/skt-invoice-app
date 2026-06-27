@@ -266,14 +266,41 @@ def build_overlay(data: dict) -> bytes:
     return buf.read()
 
 
+def build_border_overlay() -> bytes:
+    """A few of the original template's border lines are built from many
+    short, thin rect segments stacked end-to-end. When merged together
+    with the data overlay in a single content stream, some of those
+    segments can lose rendering fidelity and leave visible gaps (seen at
+    the left edge near "Invoice No"/"Billing Details" and at the
+    header/first-item-row divider in the line items table). Drawing
+    these specific lines in their own separate overlay, merged onto the
+    page as an independent pass, avoids that interaction entirely and
+    guarantees crisp, continuous borders."""
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=(PAGE_W, PAGE_H))
+    c.setStrokeColorRGB(0, 0, 0)
+    c.setLineWidth(0.6)
+    c.line(28.1, y(136.8), 28.1, y(540.4))      # left outer border, full table height
+    c.line(556.4, y(136.8), 556.4, y(540.4))    # right outer border, full table height
+    c.line(28.1, y(340.6), 556.4, y(340.6))     # header row / first item row divider
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+
 def fill_invoice_pdf(data: dict) -> bytes:
     overlay_bytes = build_overlay(data)
     overlay_reader = PdfReader(io.BytesIO(overlay_bytes))
+
+    border_overlay_bytes = build_border_overlay()
+    border_reader = PdfReader(io.BytesIO(border_overlay_bytes))
+
     base_reader = PdfReader(TEMPLATE_PATH)
 
     writer = PdfWriter()
     base_page = base_reader.pages[0]
     base_page.merge_page(overlay_reader.pages[0])
+    base_page.merge_page(border_reader.pages[0])
     writer.add_page(base_page)
 
     for p in base_reader.pages[1:]:
